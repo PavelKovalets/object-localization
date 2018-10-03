@@ -10,7 +10,7 @@ from train_model import create_model, IMAGE_SIZE, ALPHA, TRAIN_CSV, VALIDATION_C
 from keras.applications.mobilenetv2 import preprocess_input
 
 DEBUG = False
-WEIGHTS_FILE = "model-26.09.h5"
+WEIGHTS_FILE = "model-29.90.h5"
 
 def iou(boxA, boxB):
     xA = max(boxA[0], boxB[0])
@@ -49,24 +49,29 @@ def predict_image(path, model):
 
     return convert_coords(*region)
 
-def show_image(path, ground_truth, pred):
+def get_image_with_boxes(path, ground_truth, pred):
     image = cv2.imread(path)
 
     if ground_truth.any():
         cv2.rectangle(image, (ground_truth[0], ground_truth[1]), (ground_truth[2], ground_truth[3]), (0, 255, 0), 1)
     if pred.any():
         cv2.rectangle(image, (pred[0], pred[1]), (pred[2], pred[3]), (0, 0, 255), 1)
+        
+    return image
+
+def show_image(path, ground_truth, pred):
+    image = get_image_with_boxes(path, ground_truth, pred)
 
     cv2.imshow("image", image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-def dataset_iou(csv_file, model):
+    
+    
+def iterate_dataset(csv_file):
     with open(csv_file, "r") as f:
         lines = sum(1 for row in f)
         f.seek(0)
-
-        ious = []
+        
         reader = csv.reader(f, delimiter=",")
         for i, (path, xmin, ymin, xmax, ymax, _, _) in enumerate(reader):
             print("{}/{}".format(i + 1, lines), end="\r")
@@ -74,19 +79,26 @@ def dataset_iou(csv_file, model):
             coords = (float(xmin), float(ymin), float(xmax), float(ymax))
             ground_truth = convert_coords(*coords)
 
-            pred = predict_image(path, model)
+            yield (path, ground_truth) 
+    
+def dataset_iou(csv_file, model):   
+    ious = []
+    
+    for i, (path, ground_truth) in enumerate(iterate_dataset(csv_file)):
 
-            iou_ = iou(ground_truth, pred)
-            ious.append(iou_)
+        pred = predict_image(path, model)
 
-            if DEBUG:
-                print("IoU for {} is {}".format(path, iou_))
-                show_image(path, ground_truth, pred)
+        iou_ = iou(ground_truth, pred)
+        ious.append(iou_)
 
-        np.set_printoptions(suppress=True)
-        print("\nAvg IoU: {}".format(np.mean(ious)))
-        print("Highest IoU: {}".format(np.max(ious)))
-        print("Lowest IoU: {}".format(np.min(ious)))
+        if DEBUG:
+            print("IoU for {} is {}".format(path, iou_))
+            show_image(path, ground_truth, pred)
+
+    np.set_printoptions(suppress=True)
+    print("\nAvg IoU: {}".format(np.mean(ious)))
+    print("Highest IoU: {}".format(np.max(ious)))
+    print("Lowest IoU: {}".format(np.min(ious)))
 
 def main():
     model = create_model(IMAGE_SIZE, ALPHA)
